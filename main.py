@@ -110,18 +110,32 @@ def forecast_case(case: dict, name: str) -> dict:
     pool = filter_comparables(comparables)
 
     hours_out = []
+    lp = math.log(p1)
     for h in range(2, 25):
         if len(pool) >= 1:
+            pairs = []
             lrs = []
             for hrs in pool:
-                v1 = hrs[0]
+                v1_comp = hrs[0]
                 vh = hrs[h - 1]
-                if v1 > 0 and vh > 0:
-                    lrs.append(math.log(vh / v1))
-            if len(lrs) >= 1:
-                center = statistics.median(lrs)
+                if v1_comp > 0 and vh > 0:
+                    lr = math.log(vh / v1_comp)
+                    lrs.append(lr)
+                    w = math.exp(-0.5 * ((math.log(v1_comp) - lp) / 1.0) ** 2)
+                    pairs.append((lr, w))
+            if len(pairs) >= 1:
+                sorted_pairs = sorted(pairs, key=lambda x: x[0])
+                total_w = sum(w for _, w in sorted_pairs)
+                cum_w = 0.0
+                half_w = total_w / 2.0
+                center = sorted_pairs[-1][0]
+                for lr, w in sorted_pairs:
+                    cum_w += w
+                    if cum_w >= half_w:
+                        center = lr
+                        break
                 sd = statistics.pstdev(lrs) if len(lrs) > 1 else 0.15 * math.sqrt(h - 1)
-                sd = max(0.10, min(0.90, sd))
+                sd = max(0.15, min(0.90, sd))
             else:
                 center = 0.0
                 sd = 0.15 * math.sqrt(h - 1)
@@ -129,10 +143,17 @@ def forecast_case(case: dict, name: str) -> dict:
             center = 0.0
             sd = 0.15 * math.sqrt(h - 1)
 
+        if h <= 2:
+            bias = 0.0
+        elif h < 6:
+            bias = 0.35 * (h - 2) / 4.0
+        else:
+            bias = 0.35
+
         row = []
         prev = 0.0
         for z in Z:
-            val = p1 * math.exp(center + z * sd)
+            val = p1 * math.exp(center + bias + z * sd)
             r = round2(val)
             c = max(1, min(1000000000, r))
             if c < prev:
