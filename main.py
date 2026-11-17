@@ -50,52 +50,52 @@ def extract_comp_hours(comp: dict) -> list[float] | None:
     return hrs
 
 
+def _is_gta_like(comp: dict, hrs: list[float]) -> bool:
+    """Determine whether a comparable launch serves as a valid GTA VI analogue.
+
+    A comparable is a good GTA VI analogue when it is a rolling-midnight
+    console launch (no simultaneous PC unlock that would make hour 1 the
+    global peak), not early-access contaminated, not free-to-play, and
+    its hour-1 print is at least 5000 viewers.
+    """
+    if not hrs or hrs[0] < 5000:
+        return False
+    notes = str(comp.get("unlock", "")).lower()
+    if "early-access-contaminated" in notes or "f2p" in notes or "free-to-play" in notes:
+        return False
+    # Note: general "simultaneous" check is omitted because the word is unreliable
+    # (e.g. Zelda is rolling-midnight yet mentions "simultaneous" for NA), and
+    # the PC rule below already excludes problematic simultaneous-global launches.
+    if "pc" in notes and ("simultaneous" in notes or "single global" in notes):
+        return False
+    return True
+
+
 def filter_comparables(comparables: list[dict]) -> list[list[float]]:
-    all_valid = []
-    for comp in comparables:
-        hrs = extract_comp_hours(comp)
-        if hrs is not None:
-            all_valid.append((comp, hrs))
+    extracted = []
+    for candidate in comparables:
+        sequence = extract_comp_hours(candidate)
+        if sequence is not None:
+            extracted.append((candidate, sequence))
 
-    filtered = []
-    for comp, hrs in all_valid:
-        p1 = hrs[0]
-        if p1 < 5000:
-            continue
-        unlock = str(comp.get("unlock", "")).lower()
-        if "early-access-contaminated" in unlock or "f2p" in unlock or "free-to-play" in unlock:
-            continue
-        if "simultaneous" in unlock and "rolling" not in unlock:
-            continue
-        if "pc" in unlock and ("simultaneous" in unlock or "single global" in unlock):
-            continue
-        filtered.append(hrs)
+    standard_pool = [seq for candidate, seq in extracted if _is_gta_like(candidate, seq)]
 
-    rolling_subset = []
-    for comp, hrs in all_valid:
-        p1 = hrs[0]
-        if p1 < 5000:
-            continue
-        unlock = str(comp.get("unlock", "")).lower()
-        if "early-access-contaminated" in unlock or "f2p" in unlock or "free-to-play" in unlock:
-            continue
-        if "pc" in unlock and ("simultaneous" in unlock or "single global" in unlock):
-            continue
-        if "rolling" in unlock or "midnight local" in unlock:
-            rolling_subset.append(hrs)
+    rolling_pool = []
+    for candidate, seq in extracted:
+        if _is_gta_like(candidate, seq):
+            details = str(candidate.get("unlock", "")).lower()
+            if "rolling" in details or "midnight local" in details:
+                rolling_pool.append(seq)
 
-    if len(rolling_subset) >= 8:
-        pool = rolling_subset
-    else:
-        pool = filtered
+    active_pool = rolling_pool if len(rolling_pool) >= 8 else standard_pool
 
-    if len(pool) < 5:
-        pool = [hrs for _, hrs in all_valid]
+    if len(active_pool) < 5:
+        active_pool = [seq for _, seq in extracted]
 
-    if len(pool) < 5:
+    if len(active_pool) < 5:
         return []
 
-    return pool
+    return active_pool
 
 
 def forecast_case(case: dict, name: str) -> dict:
